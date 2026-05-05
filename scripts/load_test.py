@@ -1,24 +1,3 @@
-"""
-Load simulation - Assignment 6 §5.3 (Capacity Planning).
-
-Generates concurrent traffic against the system so we can observe how
-resource usage, request rate and error rate scale under stress.
-
-Usage:
-    # 50 virtual users, 30 seconds, hits all read-heavy endpoints
-    python3 scripts/load_test.py --users 50 --duration 30
-
-    # Heavy write test against /orders (the service identified as the
-    # most resource-intensive in §5.5)
-    python3 scripts/load_test.py --scenario orders --users 100 --duration 60
-
-Prints a summary with:
-    - total requests
-    - requests / second
-    - p50 / p95 / p99 latency
-    - error rate (%)
-    - per-endpoint breakdown
-"""
 from __future__ import annotations
 
 import argparse
