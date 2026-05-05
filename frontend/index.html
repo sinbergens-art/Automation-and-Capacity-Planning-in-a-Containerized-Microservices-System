@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SRE Microservices Demo</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">SRE&nbsp;Shop</div>
+    <div id="userBox" class="user-box hidden">
+      <span id="whoami"></span>
+      <button id="logoutBtn">Logout</button>
+    </div>
+  </header>
+ 
+  <main class="container">
+
+    <section id="authSection" class="card">
+      <div class="tabs">
+        <button class="tab active" data-tab="login">Login</button>
+        <button class="tab" data-tab="register">Register</button>
+      </div>
+ 
+      <form id="loginForm" class="form">
+        <h2>Welcome back</h2>
+        <label>Username <input name="username" required /></label>
+        <label>Password <input name="password" type="password" required /></label>
+        <button type="submit">Login</button>
+        <p class="msg" id="loginMsg"></p>
+      </form>
+ 
+      <form id="registerForm" class="form hidden">
+        <h2>Create an account</h2>
+        <label>Username <input name="username" required /></label>
+        <label>Email    <input name="email" type="email" required /></label>
+        <label>Password <input name="password" type="password" required /></label>
+        <button type="submit">Register</button>
+        <p class="msg" id="registerMsg"></p>
+      </form>
+    </section>
+
+    <section id="appSection" class="hidden">
+ 
+      <nav class="subnav">
+        <button class="navbtn active" data-view="products">Products</button>
+        <button class="navbtn" data-view="orders">My Orders</button>
+        <button class="navbtn" data-view="profile">Profile</button>
+        <button class="navbtn" data-view="chat">Chat</button>
+      </nav>
+
+      <div id="view-products" class="view">
+        <h2>Available Products</h2>
+        <div id="products" class="grid"></div>
+        <div id="cart" class="card cart">
+          <h3>Cart</h3>
+          <ul id="cartItems"></ul>
+          <p>Total: $<span id="cartTotal">0.00</span></p>
+          <button id="checkoutBtn">Place Order</button>
+          <p class="msg" id="checkoutMsg"></p>
+        </div>
+      </div>
+
+      <div id="view-orders" class="view hidden">
+        <h2>My Orders</h2>
+        <table class="orders">
+          <thead><tr><th>#</th><th>Total</th><th>Status</th></tr></thead>
+          <tbody id="ordersBody"></tbody>
+        </table>
+      </div>
+
+      <div id="view-profile" class="view hidden">
+        <h2>My Profile</h2>
+        <form id="profileForm" class="form">
+          <label>Full name <input name="full_name" /></label>
+          <label>Bio <textarea name="bio" rows="3"></textarea></label>
+          <button type="submit">Save</button>
+          <p class="msg" id="profileMsg"></p>
+        </form>
+      </div>
+
+      <div id="view-chat" class="view hidden">
+        <h2>Chat</h2>
+        <form id="chatForm" class="form">
+          <label>Send to (username) <input name="receiver" required /></label>
+          <label>Message <input name="body" required /></label>
+          <button type="submit">Send</button>
+        </form>
+        <h3>Inbox</h3>
+        <ul id="inbox" class="messages"></ul>
+      </div>
+ 
+    </section>
+  </main>
+ 
+  <footer class="foot">SRE Microservices · Assignment 4 + 5</footer>
+  <script src="/app.js"></script>
+</body>
+</html>

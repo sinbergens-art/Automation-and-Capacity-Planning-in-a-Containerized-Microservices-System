@@ -1,0 +1,135 @@
+groups:
+
+  - name: service_availability
+    interval: 15s
+    rules:
+
+      - alert: ServiceDown
+        expr: up{job=~"auth-service|product-service|order-service|user-service|chat-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Service {{ $labels.job }} is DOWN"
+          description: |
+            Prometheus failed to scrape {{ $labels.job }} for more than 1 minute.
+            This usually means the container is crashed, restarting, or has a
+            networking issue. Check `docker compose ps` and the container logs.
+          runbook: "docs/RUNBOOK.md#service-down"
+
+      - alert: AllBackendServicesDown
+        expr: count(up{job=~"auth-service|product-service|order-service|user-service|chat-service"} == 0) >= 3
+        for: 1m
+        labels:
+          severity: page
+          category: availability
+        annotations:
+          summary: "3 or more backend services are DOWN simultaneously"
+          description: |
+            A wide outage is in progress — likely a shared-dependency failure
+            (Postgres, network, or host). Investigate Postgres first.
+
+  - name: error_rates
+    interval: 15s
+    rules:
+
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum by (service) (rate(http_requests_total{status=~"5.."}[2m]))
+            /
+            sum by (service) (rate(http_requests_total[2m]))
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          category: errors
+        annotations:
+          summary: "{{ $labels.service }} error rate > 5% (last 2m)"
+          description: |
+            Service {{ $labels.service }} is returning 5xx for more than 5 %
+            of requests. This typically indicates a downstream dependency
+            failure (DB, another service) or an internal bug.
+
+      - alert: AnyHTTP5xxErrors
+        expr: sum by (service) (rate(http_requests_total{status=~"5.."}[1m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+          category: errors
+        annotations:
+          summary: "{{ $labels.service }} is producing 5xx errors"
+          description: |
+            At least one 5xx response in the last minute. Investigate before
+            this escalates to HighErrorRate.
+
+  - name: latency
+    interval: 30s
+    rules:
+
+      - alert: HighRequestLatency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (service, le) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "{{ $labels.service }} p95 latency > 1s"
+          description: |
+            95% of requests to {{ $labels.service }} are taking longer than
+            1 second over the last 5 minutes. Capacity may be insufficient —
+            consider horizontal scaling.
+
+  - name: resource_saturation
+    interval: 30s
+    rules:
+
+      - alert: HighCPUUsage
+        expr: |
+          rate(process_cpu_seconds_total{job=~".*-service"}[3m]) > 0.8
+        for: 3m
+        labels:
+          severity: warning
+          category: capacity
+        annotations:
+          summary: "{{ $labels.job }} CPU > 80% (3m)"
+          description: |
+            Sustained CPU usage above 80 % indicates the service is approaching
+            its capacity ceiling. Time to scale horizontally
+            (`docker compose up -d --scale {{ $labels.job }}=N`) or vertically.
+
+      - alert: HighMemoryUsage
+        expr: |
+          (process_resident_memory_bytes{job=~".*-service"} / 1024 / 1024) > 400
+        for: 5m
+        labels:
+          severity: warning
+          category: capacity
+        annotations:
+          summary: "{{ $labels.job }} memory > 400 MB"
+          description: |
+            Service {{ $labels.job }} is using more than 400 MB of RAM.
+            Check for memory leaks or scale up the container memory limit.
+
+  - name: container_health
+    interval: 30s
+    rules:
+
+      - alert: TargetFlapping
+        expr: changes(up{job=~".*-service"}[10m]) >= 3
+        for: 2m
+        labels:
+          severity: warning
+          category: stability
+        annotations:
+          summary: "{{ $labels.job }} is flapping (≥3 state changes / 10m)"
+          description: |
+            The target's UP/DOWN state has changed at least 3 times in 10
+            minutes — usually a sign of a CrashLoop or a misconfigured
+            healthcheck. Mirrors the Assignment-4 incident pattern
+            (DB_HOST=postgres-typo).

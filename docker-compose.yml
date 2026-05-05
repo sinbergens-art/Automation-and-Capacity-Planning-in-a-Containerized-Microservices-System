@@ -1,0 +1,238 @@
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB:       ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    networks: [sre-net]
+
+  auth-service:
+    build: ./services/auth-service
+    container_name: auth-service
+    restart: unless-stopped
+    environment:
+      DB_HOST:     ${DB_HOST}
+      DB_PORT:     ${DB_PORT}
+      DB_NAME:     ${DB_NAME}
+      DB_USER:     ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET:  ${JWT_SECRET}
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:    { cpus: "0.5", memory: 256M }
+        reservations: { cpus: "0.1", memory: 64M }
+    networks: [sre-net]
+
+  product-service:
+    build: ./services/product-service
+    container_name: product-service
+    restart: unless-stopped
+    environment:
+      DB_HOST:     ${DB_HOST}
+      DB_PORT:     ${DB_PORT}
+      DB_NAME:     ${DB_NAME}
+      DB_USER:     ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:    { cpus: "0.5", memory: 256M }
+        reservations: { cpus: "0.1", memory: 64M }
+    networks: [sre-net]
+
+  order-service:
+    build: ./services/order-service
+    restart: unless-stopped
+    environment:
+      DB_HOST:             ${DB_HOST}
+      DB_PORT:             ${DB_PORT}
+      DB_NAME:             ${DB_NAME}
+      DB_USER:             ${DB_USER}
+      DB_PASSWORD:         ${DB_PASSWORD}
+      PRODUCT_SERVICE_URL: ${PRODUCT_SERVICE_URL}
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      product-service:
+        condition: service_started
+    deploy:
+      resources:
+        limits:    { cpus: "0.75", memory: 384M }
+        reservations: { cpus: "0.2", memory: 96M }
+    networks: [sre-net]
+
+  user-service:
+    build: ./services/user-service
+    container_name: user-service
+    restart: unless-stopped
+    environment:
+      DB_HOST:     ${DB_HOST}
+      DB_PORT:     ${DB_PORT}
+      DB_NAME:     ${DB_NAME}
+      DB_USER:     ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8004:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:    { cpus: "0.5", memory: 256M }
+        reservations: { cpus: "0.1", memory: 64M }
+    networks: [sre-net]
+
+  chat-service:
+    build: ./services/chat-service
+    container_name: chat-service
+    restart: unless-stopped
+    environment:
+      DB_HOST:     ${DB_HOST}
+      DB_PORT:     ${DB_PORT}
+      DB_NAME:     ${DB_NAME}
+      DB_USER:     ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8005:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:    { cpus: "0.5", memory: 256M }
+        reservations: { cpus: "0.1", memory: 64M }
+    networks: [sre-net]
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - auth-service
+      - product-service
+      - order-service
+      - user-service
+      - chat-service
+    deploy:
+      resources:
+        limits:    { cpus: "0.25", memory: 128M }
+    networks: [sre-net]
+
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prom-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    depends_on:
+      - alertmanager
+    networks: [sre-net]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    networks: [sre-net]
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    privileged: true
+    networks: [sre-net]
+
+  webhook-sink:
+    image: python:3.11-alpine
+    container_name: webhook-sink
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./monitoring/webhook-sink:/app:ro
+    command: ["python", "/app/sink.py"]
+    ports:
+      - "8088:8080"
+    networks: [sre-net]
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER:     ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks: [sre-net]
+
+volumes:
+  pgdata:
+  prom-data:
+  grafana-data:
+  alertmanager-data:
+
+networks:
+  sre-net:
+    driver: bridge
